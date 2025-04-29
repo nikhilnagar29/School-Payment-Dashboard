@@ -50,14 +50,15 @@ app.use(errorHandler);
 
 // Server
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || 'localhost';
+// Remove host binding as Render requires listening on 0.0.0.0
+// const HOST = process.env.HOST || 'localhost';
 
-// Check if port is in use and exit gracefully if it is
-const server = app.listen(PORT, HOST, () => {
+// Modified to always listen on 0.0.0.0 for Render compatibility
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Server bound to interface: ${HOST}`);
-  console.log(`API available at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
-  console.log(`Webhook endpoint: http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}/api/payments/webhook`);
+  console.log(`Server bound to interface: 0.0.0.0`);
+  console.log(`API available at http://localhost:${PORT}`);
+  console.log(`Webhook endpoint: http://localhost:${PORT}/api/payments/webhook`);
 }).on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`Port ${PORT} is already in use. Please use a different port or close the application using this port.`);

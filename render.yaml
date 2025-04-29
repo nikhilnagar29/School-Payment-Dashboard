@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: school-payment-dashboard-api
+    env: node
+    region: singapore # Choose your preferred region
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGODB_URL
+        sync: false # This will be set manually in Render dashboard
+      - key: JWT_SECRET
+        sync: false # This will be set manually in Render dashboard
+      - key: JWT_EXPIRES_IN
+        value: 30d
+      - key: RAZORPAY_KEY_ID
+        sync: false # This will be set manually in Render dashboard
+      - key: RAZORPAY_KEY_SECRET
+        sync: false # This will be set manually in Render dashboard
+      - key: WEBHOOK_SECRET
+        sync: false # This will be set manually in Render dashboard
