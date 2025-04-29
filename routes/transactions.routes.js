@@ -221,4 +221,166 @@ router.get('/:id', protect, authorize('admin', 'trustee'), async (req, res) => {
   }
 });
 
+/**
+ * @desc    Fetch Transactions by School ID
+ * @route   GET /api/transactions/school/:schoolId
+ * @access  Private/Admin/Trustee
+ */
+router.get('/school/:schoolId', protect, authorize('admin', 'trustee'), async (req, res) => {
+  try {
+    const { schoolId } = req.params;
+    const { status, page = 1, limit = 10 } = req.query;
+    
+    // Create match stage for filtering
+    const matchStage = {
+      'order.school_id': schoolId
+    };
+
+    // Add status filter if provided
+    if (status && ['success', 'pending', 'failed'].includes(status.toLowerCase())) {
+      matchStage.status = status.toLowerCase();
+    }
+
+    // If user is trustee, verify they have access to this school
+    if (req.user.role === 'trustee') {
+      const hasAccess = await Order.exists({
+        school_id: schoolId,
+        trustee_id: req.user.id
+      });
+
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: 'Not authorized to view transactions for this school'
+        });
+      }
+    }
+
+    // Calculate skip value for pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const transactions = await OrderStatus.aggregate([
+      {
+        $lookup: {
+          from: 'orders',
+          localField: 'collect_id',
+          foreignField: '_id',
+          as: 'order'
+        }
+      },
+      { $unwind: '$order' },
+      { $match: matchStage },
+      {
+        $project: {
+          collect_id: 1,
+          order_amount: 1,
+          transaction_amount: 1,
+          status: 1,
+          payment_mode: 1,
+          payment_time: 1,
+          bank_reference: { $ifNull: ['$bank_reference', 'N/A'] },
+          custom_order_id: '$order.custom_order_id',
+          student_info: '$order.student_info'
+        }
+      },
+      { $sort: { payment_time: -1 } },
+      { $skip: skip },
+      { $limit: parseInt(limit) }
+    ]);
+
+    // Get total count for pagination
+    const totalCount = await OrderStatus.aggregate([
+      {
+        $lookup: {
+          from: 'orders',
+          localField: 'collect_id',
+          foreignField: '_id',
+          as: 'order'
+        }
+      },
+      { $unwind: '$order' },
+      { $match: matchStage },
+      { $count: 'total' }
+    ]);
+
+    res.status(200).json({
+      transactions,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages: Math.ceil((totalCount[0]?.total || 0) / parseInt(limit)),
+        totalRecords: totalCount[0]?.total || 0
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching school transactions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch school transactions',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @desc    Check Transaction Status by Custom Order ID
+ * @route   GET /api/transactions/status/:custom_order_id
+ * @access  Private/Admin/Trustee
+ */
+router.get('/status/:custom_order_id', protect, authorize('admin', 'trustee'), async (req, res) => {
+  try {
+    const { custom_order_id } = req.params;
+
+    // First find the order
+    const order = await Order.findOne({ custom_order_id });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    // Check authorization for trustee
+    if (req.user.role === 'trustee' && order.trustee_id.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        error: 'Not authorized to view this transaction'
+      });
+    }
+
+    // Find the transaction status
+    const transaction = await OrderStatus.findOne({
+      collect_id: order._id
+    }).select('status payment_time payment_mode transaction_amount payment_message error_message bank_reference');
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        error: 'No transaction found for this order'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      transaction: {
+        custom_order_id,
+        status: transaction.status,
+        payment_time: transaction.payment_time,
+        payment_mode: transaction.payment_mode,
+        transaction_amount: transaction.transaction_amount,
+        payment_message: transaction.payment_message,
+        error_message: transaction.error_message,
+        bank_reference: transaction.bank_reference || 'N/A'
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error checking transaction status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check transaction status',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router; 
