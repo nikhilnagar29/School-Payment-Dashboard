@@ -39,6 +39,10 @@ const OrderSchema = new Schema({
     unique: true, 
     required: true 
   }, // Generated unique ID
+  payment_link: {
+    type: String,
+    unique: true
+  },
   created_at: { 
     type: Date, 
     default: Date.now 
