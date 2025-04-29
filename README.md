@@ -17,7 +17,7 @@ A comprehensive payment management and dashboard system for schools and educatio
 
 ## Features
 
-- Payment gateway integration with Razorpay
+- Payment gateway integration with Edviron
 - Payment link generation for students
 - Transaction tracking and status monitoring
 - Comprehensive reporting and analytics
@@ -76,8 +76,9 @@ SERVER_URL=http://localhost:5000
   {
     "name": "Admin User",
     "email": "admin@example.com",
-    "password": "password123",
-    "role": "admin" // admin or trustee
+    "password": "password",
+    "role": "admin", // admin or trustee
+    "school_id": ["school_1" , "school_2"]
   }
   ```
 - **Response (200 OK)**:
@@ -85,12 +86,6 @@ SERVER_URL=http://localhost:5000
   {
     "success": true,
     "token": "jwt_token_here",
-    "user": {
-      "id": "user_id",
-      "name": "Admin User",
-      "email": "admin@example.com",
-      "role": "admin"
-    }
   }
   ```
 - **Response (400 Bad Request)**:
@@ -118,12 +113,6 @@ SERVER_URL=http://localhost:5000
   {
     "success": true,
     "token": "jwt_token_here",
-    "user": {
-      "id": "user_id",
-      "name": "Admin User",
-      "email": "admin@example.com",
-      "role": "admin"
-    }
   }
   ```
 - **Response (401 Unauthorized)**:
@@ -147,11 +136,12 @@ SERVER_URL=http://localhost:5000
   ```json
   {
     "success": true,
-    "user": {
-      "id": "user_id",
+    "data": {
+      "_id": "user_id",
       "name": "Admin User",
       "email": "admin@example.com",
       "role": "admin"
+      "schools": []
     }
   }
   ```
@@ -181,13 +171,15 @@ SERVER_URL=http://localhost:5000
       "id": "user_id_1",
       "name": "Admin User",
       "email": "admin@example.com",
-      "role": "admin"
+      "role": "admin",
+      "schools": [ "school_ids" ],
     },
     {
       "id": "user_id_2",
       "name": "Trustee User",
       "email": "trustee@example.com",
-      "role": "trustee"
+      "role": "trustee",
+      "schools": [ "school_ids" ],
     }
   ]
   ```
@@ -207,7 +199,8 @@ SERVER_URL=http://localhost:5000
     "id": "user_id",
     "name": "Admin User",
     "email": "admin@example.com",
-    "role": "admin"
+    "role": "admin",
+    "schools": [ "school_ids" ],
   }
   ```
 - **Response (404 Not Found)**:
@@ -239,7 +232,7 @@ SERVER_URL=http://localhost:5000
   ```json
   {
     "success": true,
-    "user": {
+    "data": {
       "id": "user_id",
       "name": "Updated Name",
       "email": "updated@example.com",
@@ -269,7 +262,7 @@ SERVER_URL=http://localhost:5000
 
 #### Create Payment Link
 
-- **URL**: `POST /api/payments/create-link`
+- **URL**: `POST /api/payments/create-payment`
 - **Access**: Private/Admin/Trustee
 - **Description**: Create a new payment link for a student
 - **Headers**:
@@ -280,39 +273,20 @@ SERVER_URL=http://localhost:5000
   ```json
   {
     "student_info": {
+      "names": "student",
+      "id": "student_id",
       "email": "student@example.com",
-      "names": "John Doe",
-      "id": "STU101",
-      "class": "10A",
-      "roll_number": "101"
     },
     "school_id": "school_id_here",
-    "amount": 1000,
-    "description": "Annual fee payment",
-    "custom_order_id": "ORDER-101"
+    "order_amount": 1000
   }
   ```
 - **Response (201 Created)**:
   ```json
   {
     "success": true,
-    "order": {
-      "_id": "order_id",
-      "custom_order_id": "ORDER-101",
-      "school_id": "school_id_here",
-      "student_info": {
-        "email": "student@example.com",
-        "names": "John Doe",
-        "id": "STU101",
-        "class": "10A",
-        "roll_number": "101"
-      },
-      "amount": 1000,
-      "description": "Annual fee payment",
-      "gateway_name": "razorpay",
-      "payment_link": "https://razorpay.com/payment/link_id",
-      "createdAt": "2023-06-15T10:00:00.000Z"
-    }
+    "collect_request_id": "ORDER-101",
+    "payment_link": "https://dev-payments.edviron.com/edviron-pg"
   }
   ```
 - **Response (400 Bad Request)**:
@@ -372,39 +346,69 @@ SERVER_URL=http://localhost:5000
   ```
   x-razorpay-signature: webhook_signature_here
   ```
-- **Request Body**: Webhook payload from the payment gateway (varies by event type)
+- **Request Body (Edviron Format)**:
+  ```json
+  {
+    "EdvironCollectRequestId": "collect_id_here",
+    "status": "SUCCESS",
+    "amount": "1000",
+    "payment_mode": "UPI",
+    "transaction_id": "txn_id_here"
+  }
+  ```
+- **Request Body (Legacy Format)**:
+  ```json
+  {
+    "order_info": {
+      "order_id": "collect_id_here",
+      "status": "success",
+      "order_amount": 1000,
+      "transaction_amount": 1000,
+      "payment_mode": "UPI",
+      "payment_details": "upi_id@ybl",
+      "bank_reference": "BANK001",
+      "Payment_message": "payment success",
+      "payment_time": "2023-06-15T10:00:00.000Z"
+    }
+  }
+  ```
 - **Response (200 OK)**:
   ```json
   {
     "success": true,
-    "message": "Webhook processed successfully"
+    "message": "Payment status updated"
   }
   ```
-- **Response (400 Bad Request)**:
+- **Response (Error Handling)**:
   ```json
   {
     "success": false,
-    "error": "Invalid webhook signature"
+    "error": "Error type",
+    "message": "Detailed error message"
   }
   ```
 
 #### Webhook Handler (GET - Query Parameter Support)
 
-- **URL**: `GET /api/payments/webhook`
+- **URL**: `GET /api/payments/webhook?EdvironCollectRequestId=collect_id_here&status=SUCCESS&amount=1000`
 - **Access**: Public
-- **Description**: Alternative webhook handler that supports query parameters
+- **Description**: Alternative webhook handler that supports query parameters for gateways that use GET requests
 - **Query Parameters**:
-  - `order_id`: Payment order ID
-  - `custom_id`: Custom order ID
-  - `status`: Payment status (success, failed, pending)
+  - `EdvironCollectRequestId`: (Required) Collection/Order ID
+  - `status`: (Required) Payment status ("SUCCESS", "PENDING", "FAILED")
   - `amount`: Transaction amount
+  - `payment_mode`: Payment method used
   - `transaction_id`: Transaction reference ID
 - **Response (200 OK)**:
   ```json
   {
     "success": true,
-    "message": "Webhook processed successfully"
+    "message": "Payment status updated"
   }
+  ```
+- **Example URL**:
+  ```
+  https://school-payment-dashboard-1.onrender.com/api/payments/webhook?EdvironCollectRequestId=68112450d155691054fe68f7&status=SUCCESS&amount=1000
   ```
 
 #### Test Webhook

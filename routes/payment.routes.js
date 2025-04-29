@@ -121,6 +121,126 @@ router.post("/create-payment", protect, authorize('admin', 'trustee'), async (re
   }
 });
 
+// @desc    Process payment webhook (GET method with query parameters)
+// @route   GET /api/payments/webhook
+// @access  Public
+router.get("/webhook", async (req, res) => {
+  let webhookLog;
+
+  try {
+    // Log the incoming request
+    console.log('📥 Received GET webhook:', req.query);
+    
+    // Extract query parameters
+    const { EdvironCollectRequestId, status, amount } = req.query;
+    
+    // Log webhook request for tracking
+    webhookLog = new WebhookLog({
+      payload: req.query,
+      status_code: 200,
+      processed: false,
+      method: 'GET'
+    });
+    await webhookLog.save();
+
+    // Validate required parameters
+    if (!EdvironCollectRequestId) {
+      webhookLog.status_code = 400;
+      webhookLog.message = 'Missing EdvironCollectRequestId parameter';
+      await webhookLog.save();
+      return res.status(200).json({
+        success: false,
+        error: 'Missing EdvironCollectRequestId parameter'
+      });
+    }
+
+    // Normalize the status
+    const normalizedStatus = (status === 'SUCCESS') ? 'success' : 
+                            (status === 'PENDING') ? 'pending' : 
+                            (status === 'FAILED') ? 'failed' : 'pending';
+
+    // Find the order by custom_order_id
+    const order = await Order.findOne({ custom_order_id: EdvironCollectRequestId });
+
+    if (!order) {
+      webhookLog.status_code = 404;
+      webhookLog.message = 'Order not found';
+      await webhookLog.save();
+      return res.status(200).json({
+        success: false,
+        error: 'Order not found'
+      });
+    }
+
+    console.log(`✅ Found order for EdvironCollectRequestId ${EdvironCollectRequestId}:`, order._id);
+    
+    // Parse amount or use default from order (if available)
+    const parsedAmount = amount ? Number(amount) : 0;
+    
+    // Check if an order status already exists
+    const existingStatus = await OrderStatus.findOne({ collect_id: order._id });
+
+    // Prepare order status data
+    const orderStatusData = {
+      collect_id: order._id,
+      order_amount: parsedAmount,
+      transaction_amount: normalizedStatus === 'success' ? parsedAmount : 0,
+      payment_mode: req.query.payment_mode || 'UPI',
+      payment_details: JSON.stringify(req.query),
+      bank_reference: req.query.transaction_id || req.query.bank_reference || `webhook-${Date.now()}`,
+      status: normalizedStatus,
+      payment_message: status === 'SUCCESS' ? 'Payment successful' : 
+                      status === 'PENDING' ? 'Payment pending' : 'Payment failed',
+      error_message: normalizedStatus === 'failed' ? 'Payment failed' : '',
+      payment_time: new Date()
+    };
+
+    // Update or create order status
+    if (existingStatus) {
+      // Don't downgrade from success to any other status
+      if (existingStatus.status === 'success' && normalizedStatus !== 'success') {
+        console.log('⚠️ Not downgrading payment from success to another status');
+      } else {
+        console.log('🔄 Updating existing order status');
+        await OrderStatus.findByIdAndUpdate(
+          existingStatus._id, 
+          orderStatusData,
+          { new: true }
+        );
+      }
+    } else {
+      console.log('➕ Creating new order status');
+      await new OrderStatus(orderStatusData).save();
+    }
+
+    // Mark webhook as processed
+    webhookLog.processed = true;
+    webhookLog.message = 'Webhook processed successfully';
+    await webhookLog.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Payment status updated'
+    });
+
+  } catch (error) {
+    console.error('❌ GET Webhook processing error:', error);
+
+    if (webhookLog) {
+      webhookLog.status_code = 500;
+      webhookLog.processed = false;
+      webhookLog.message = error.message;
+      await webhookLog.save();
+    }
+
+    return res.status(200).json({
+      success: false,
+      error: 'Webhook processing failed',
+      message: error.message
+    });
+  }
+});
+
 // @desc    Process payment webhook
 // @route   POST /api/payments/webhook
 // @access  Public
@@ -131,28 +251,71 @@ router.post("/webhook", async (req, res) => {
       const data = req.body;
   
       // Log the incoming payload
+      console.log('📥 Received POST webhook:', data);
+      
       webhookLog = new WebhookLog({
         payload: data,
         status_code: 200,
-        processed: false
+        processed: false,
+        method: 'POST'
       });
       await webhookLog.save();
   
-      const orderInfo = data.order_info;
-  
-      if (!orderInfo || !orderInfo.order_id) {
+      // Support both payload formats: new Edviron format and old format with order_info
+      // Check for Edviron collect request ID format first
+      let collectId, status, orderAmount, transactionAmount, paymentMode, paymentDetails, bankReference, paymentMessage, errorMessage, paymentTime;
+      
+      if (data.EdvironCollectRequestId) {
+        // New Edviron webhook format
+        collectId = data.EdvironCollectRequestId;
+        status = data.status === 'SUCCESS' ? 'success' : 
+                (data.status === 'PENDING' ? 'pending' : 'failed');
+        orderAmount = data.amount ? Number(data.amount) : 0;
+        transactionAmount = status === 'success' ? orderAmount : 0;
+        paymentMode = data.payment_mode || 'UPI';
+        paymentDetails = JSON.stringify(data);
+        bankReference = data.transaction_id || data.bank_reference || `webhook-${Date.now()}`;
+        paymentMessage = data.status === 'SUCCESS' ? 'Payment successful' : 
+                        (data.status === 'PENDING' ? 'Payment pending' : 'Payment failed');
+        errorMessage = status === 'failed' ? 'Payment failed' : '';
+        paymentTime = new Date();
+      } else if (data.order_info && data.order_info.order_id) {
+        // Original format
+        const orderInfo = data.order_info;
+        // Extract actual collect_id from order_id (assumed format: "collect_id/transaction_id")
+        [collectId] = orderInfo.order_id.split('/');
+        status = orderInfo.status?.toLowerCase();
+        orderAmount = orderInfo.order_amount;
+        transactionAmount = orderInfo.transaction_amount;
+        paymentMode = orderInfo.payment_mode || 'unknown';
+        paymentDetails = orderInfo.payment_details || '';
+        bankReference = orderInfo.bank_reference || '';
+        paymentMessage = orderInfo.Payment_message || '';
+        errorMessage = status === 'failed' ? (orderInfo.error_message || 'Payment failed') : '';
+        paymentTime = new Date(orderInfo.payment_time || Date.now());
+      } else {
         webhookLog.status_code = 400;
+        webhookLog.message = 'Invalid webhook payload format';
         await webhookLog.save();
         return res.status(200).json({
           success: false,
-          error: 'Missing order_id in order_info'
+          error: 'Invalid webhook payload format'
         });
       }
   
-      const status = orderInfo.status?.toLowerCase();
+      if (!collectId) {
+        webhookLog.status_code = 400;
+        webhookLog.message = 'Missing order ID in payload';
+        await webhookLog.save();
+        return res.status(200).json({
+          success: false,
+          error: 'Missing order ID in payload'
+        });
+      }
   
       if (!['success', 'pending', 'failed'].includes(status)) {
         webhookLog.status_code = 400;
+        webhookLog.message = 'Invalid or missing status';
         await webhookLog.save();
         return res.status(200).json({
           success: false,
@@ -160,13 +323,11 @@ router.post("/webhook", async (req, res) => {
         });
       }
   
-      // Extract actual collect_id from order_id (assumed format: "collect_id/transaction_id")
-      const [collectId] = orderInfo.order_id.split('/');
-  
       const order = await Order.findOne({ custom_order_id: collectId });
   
       if (!order) {
         webhookLog.status_code = 404;
+        webhookLog.message = 'Order not found';
         await webhookLog.save();
         return res.status(200).json({
           success: false,
@@ -174,29 +335,39 @@ router.post("/webhook", async (req, res) => {
         });
       }
   
+      console.log(`✅ Found order for webhook:`, order._id);
+      
       // Update or create OrderStatus
       const existingStatus = await OrderStatus.findOne({ collect_id: order._id });
   
       const statusData = {
         collect_id: order._id,
-        order_amount: orderInfo.order_amount,
-        transaction_amount: orderInfo.transaction_amount,
-        payment_mode: orderInfo.payment_mode || 'unknown',
-        payment_details: orderInfo.payemnt_details || '',
-        bank_reference: orderInfo.bank_reference || '',
+        order_amount: orderAmount,
+        transaction_amount: transactionAmount,
+        payment_mode: paymentMode,
+        payment_details: paymentDetails,
+        bank_reference: bankReference,
         status,
-        payment_message: orderInfo.Payment_message || '',
-        error_message: status === 'failed' ? (orderInfo.error_message || 'Payment failed') : '',
-        payment_time: new Date(orderInfo.payment_time)
+        payment_message: paymentMessage,
+        error_message: errorMessage,
+        payment_time: paymentTime
       };
   
       if (existingStatus) {
-        await OrderStatus.findByIdAndUpdate(existingStatus._id, statusData, { new: true });
+        // Don't downgrade from success to any other status
+        if (existingStatus.status === 'success' && status !== 'success') {
+          console.log('⚠️ Not downgrading payment from success to another status');
+        } else {
+          console.log('🔄 Updating existing order status');
+          await OrderStatus.findByIdAndUpdate(existingStatus._id, statusData, { new: true });
+        }
       } else {
+        console.log('➕ Creating new order status');
         await new OrderStatus(statusData).save();
       }
   
       webhookLog.processed = true;
+      webhookLog.message = 'Webhook processed successfully';
       await webhookLog.save();
   
       return res.status(200).json({
@@ -204,11 +375,12 @@ router.post("/webhook", async (req, res) => {
         message: 'Payment status updated'
       });
     } catch (error) {
-      console.error('❌ Webhook error:', error.message);
+      console.error('❌ POST Webhook error:', error.message);
   
       if (webhookLog) {
         webhookLog.status_code = 500;
         webhookLog.processed = false;
+        webhookLog.message = error.message;
         await webhookLog.save();
       }
   

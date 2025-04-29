@@ -7,9 +7,9 @@ const { protect } = require('../middlewares/auth.middleware');
 // @desc    Register admin/trustee
 // @route   POST /api/auth/register
 // @access  Public
-router.post('/register', async (req, res, next) => {
+router.post('/register' ,async (req, res, next) => {
   try {
-    const { email, password, role, school_id } = req.body;
+    const { name , email, password, role, school_id } = req.body;
 
     // Validate role
     if (!['admin', 'trustee'].includes(role)) {
@@ -18,10 +18,11 @@ router.post('/register', async (req, res, next) => {
  
     // Create user
     const user = await User.create({
-      email,
-      password,
-      role,
-      school_id
+        name ,
+        email,
+        password,
+        role,
+        school_id
     });
 
     sendTokenResponse(user, 201, res);
