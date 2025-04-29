@@ -21,112 +21,103 @@ mongoose.connect(process.env.MONGODB_URL, {
 async function seedData() {
   try {
     // Clear existing test data
-    await Order.deleteMany({});
-    await OrderStatus.deleteMany({});
+    await Order.deleteMany({ custom_order_id: /^TEST-/ });
+    await OrderStatus.deleteMany({ status: { $in: ['success', 'pending', 'failed'] } });
+    
     console.log('Cleared existing test data');
     
-    // Create some test orders
-    const schoolId = new mongoose.Types.ObjectId();
-    const trusteeId = new mongoose.Types.ObjectId();
-
+    // Create test orders
     const orders = await Order.create([
       {
-        school_id: schoolId,
-        trustee_id: trusteeId,
+        school_id: "SCHOOL-001",
+        trustee_id: "TRUSTEE-001",
         student_info: {
-          email: 'student1@example.com',
-          names: 'John Doe',
-          id: 'STU101',
-          class: '10A',
-          roll_number: '101'
+          name: "Test Student 1",
+          grade: "10th",
+          id: "STD-001"
         },
-        gateway_name: 'razorpay',
-        payment_link: 'https://razorpay.com/pay/test-1',
-        custom_order_id: 'ORDER-001'
+        gateway_name: "PhonePe",
+        payment_link: "https://test-payment.com/1",
+        custom_order_id: "TEST-ORDER-001"
       },
       {
-        school_id: schoolId,
-        trustee_id: trusteeId,
+        school_id: "SCHOOL-002",
+        trustee_id: "TRUSTEE-001",
         student_info: {
-          email: 'student2@example.com',
-          names: 'Jane Smith',
-          id: 'STU202',
-          class: '11B',
-          roll_number: '202'
+          name: "Test Student 2",
+          grade: "11th",
+          id: "STD-002"
         },
-        gateway_name: 'razorpay',
-        payment_link: 'https://razorpay.com/pay/test-2',
-        custom_order_id: 'ORDER-002'
+        gateway_name: "Razorpay",
+        payment_link: "https://test-payment.com/2",
+        custom_order_id: "TEST-ORDER-002"
       },
       {
-        school_id: schoolId,
-        trustee_id: trusteeId,
+        school_id: "SCHOOL-001",
+        trustee_id: "TRUSTEE-002",
         student_info: {
-          email: 'student3@example.com',
-          names: 'Bob Wilson',
-          id: 'STU303',
-          class: '12C',
-          roll_number: '303'
+          name: "Test Student 3",
+          grade: "12th",
+          id: "STD-003"
         },
-        gateway_name: 'razorpay',
-        payment_link: 'https://razorpay.com/pay/test-3',
-        custom_order_id: 'ORDER-003'
+        gateway_name: "PhonePe",
+        payment_link: "https://test-payment.com/3",
+        custom_order_id: "TEST-ORDER-003"
       }
     ]);
     
-    console.log('Created test orders:', orders.map(o => o._id));
+    console.log('Created test orders');
     
-    // Create order statuses for each order
+    // Create test order statuses
     const statuses = await OrderStatus.create([
       {
         collect_id: orders[0]._id,
-        order_amount: 1000,
-        transaction_amount: 1000,
-        payment_mode: 'UPI',
-        payment_details: {
-          upi_id: 'test@upi',
-          transaction_ref: 'TX001'
-        },
-        bank_reference: 'BANK001',
-        status: 'success',
-        payment_message: 'Payment successful',
+        order_amount: 2000,
+        transaction_amount: 2000,
+        payment_mode: "UPI",
+        payment_details: "success@ybl",
+        bank_reference: "YESBNK001",
+        status: "success",
+        payment_message: "Payment successful",
         payment_time: new Date()
       },
       {
         collect_id: orders[1]._id,
-        order_amount: 2000,
-        transaction_amount: 2000,
-        payment_mode: 'CARD',
-        payment_details: {
-          card_network: 'VISA',
-          transaction_ref: 'TX002'
-        },
-        bank_reference: 'BANK002',
-        status: 'pending',
-        payment_message: 'Payment initiated',
+        order_amount: 3000,
+        transaction_amount: 3000,
+        payment_mode: "UPI",
+        payment_details: "pending@ybl",
+        bank_reference: "YESBNK002",
+        status: "pending",
+        payment_message: "Payment initiated",
         payment_time: new Date()
       },
       {
         collect_id: orders[2]._id,
-        order_amount: 3000,
+        order_amount: 4000,
         transaction_amount: 0,
-        payment_mode: 'NET_BANKING',
-        payment_details: {
-          bank_name: 'Test Bank',
-          transaction_ref: 'TX003'
-        },
-        bank_reference: 'BANK003',
-        status: 'failed',
-        payment_message: 'Bank declined transaction',
+        payment_mode: "UPI",
+        payment_details: "failed@ybl",
+        bank_reference: "YESBNK003",
+        status: "failed",
+        payment_message: "Payment failed",
+        error_message: "Insufficient funds",
         payment_time: new Date()
       }
     ]);
     
-    console.log('Created test order statuses:', statuses.map(s => s._id));
-    console.log('Seeding completed successfully');
+    console.log('Created test order statuses');
+    console.log('\nTest data summary:');
+    console.log('Orders created:', orders.length);
+    console.log('Statuses created:', statuses.length);
+    console.log('\nTest order IDs:');
+    orders.forEach(order => {
+      console.log(`- ${order.custom_order_id}`);
+    });
+    
+    process.exit(0);
   } catch (error) {
     console.error('Error seeding data:', error);
-  } finally {
-    await mongoose.disconnect();
+    process.exit(1);
   }
 } 
