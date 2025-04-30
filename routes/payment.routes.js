@@ -409,6 +409,7 @@ router.get("/status/:collect_request_id", protect, authorize('admin', 'trustee')
 
     const PG_KEY = process.env.PG_KEY;
     const API_KEY = process.env.API_KEY;
+    school_id = school_id || process.env.SCHOOL_ID ;
 
     // Generate JWT signature for status check
     const payload = {

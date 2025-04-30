@@ -78,14 +78,14 @@ SERVER_URL=http://localhost:5000
     "email": "admin@example.com",
     "password": "password",
     "role": "admin", // admin or trustee
-    "school_id": ["school_1" , "school_2"]
+    "school_id": ["school_1", "school_2"]
   }
   ```
 - **Response (200 OK)**:
   ```json
   {
     "success": true,
-    "token": "jwt_token_here",
+    "token": "jwt_token_here"
   }
   ```
 - **Response (400 Bad Request)**:
@@ -112,7 +112,7 @@ SERVER_URL=http://localhost:5000
   ```json
   {
     "success": true,
-    "token": "jwt_token_here",
+    "token": "jwt_token_here"
   }
   ```
 - **Response (401 Unauthorized)**:
@@ -172,14 +172,14 @@ SERVER_URL=http://localhost:5000
       "name": "Admin User",
       "email": "admin@example.com",
       "role": "admin",
-      "schools": [ "school_ids" ],
+      "schools": ["school_ids"]
     },
     {
       "id": "user_id_2",
       "name": "Trustee User",
       "email": "trustee@example.com",
       "role": "trustee",
-      "schools": [ "school_ids" ],
+      "schools": ["school_ids"]
     }
   ]
   ```
@@ -200,7 +200,7 @@ SERVER_URL=http://localhost:5000
     "name": "Admin User",
     "email": "admin@example.com",
     "role": "admin",
-    "schools": [ "school_ids" ],
+    "schools": ["school_ids"]
   }
   ```
 - **Response (404 Not Found)**:
@@ -275,7 +275,7 @@ SERVER_URL=http://localhost:5000
     "student_info": {
       "names": "student",
       "id": "student_id",
-      "email": "student@example.com",
+      "email": "student@example.com"
     },
     "school_id": "school_id_here",
     "order_amount": 1000
