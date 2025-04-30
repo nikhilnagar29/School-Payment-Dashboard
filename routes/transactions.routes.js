@@ -401,15 +401,7 @@ router.get('/:id', protect, authorize('admin', 'trustee'), async (req, res) => {
       });
     }
     
-    // Check if user is authorized to view this transaction
-    if (req.user.role === 'trustee' && 
-        transaction.collect_id.trustee_id && 
-        transaction.collect_id.trustee_id.toString() !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        error: 'Not authorized to view this transaction'
-      });
-    }
+    
     
     // Format the response
     const formattedTransaction = {
@@ -421,6 +413,7 @@ router.get('/:id', protect, authorize('admin', 'trustee'), async (req, res) => {
       order_amount: transaction.order_amount,
       transaction_amount: transaction.transaction_amount,
       status: transaction.status,
+      trustee_id: transaction.collect_id.trustee_id,
       custom_order_id: transaction.collect_id.custom_order_id,
       payment_mode: transaction.payment_mode,
       payment_time: transaction.payment_time,
@@ -469,6 +462,29 @@ router.get('/school/:schoolId', protect, authorize('admin', 'trustee'), async (r
         error: 'Invalid school ID format'
       });
     }
+    
+    // First check if any orders exist with this school ID
+    const orderCount = await Order.countDocuments({ school_id: new mongoose.Types.ObjectId(schoolId) });
+    
+    if (orderCount === 0) {
+      // For better debugging, list all available school IDs
+      const allOrders = await Order.find().select('school_id').lean();
+      const uniqueSchoolIds = [...new Set(allOrders.map(o => o.school_id.toString()))];
+      
+      return res.status(200).json({
+        data: [],
+        school_id: schoolId,
+        available_school_ids: uniqueSchoolIds,
+        message: 'No orders found with this school ID',
+        pagination: {
+          total: 0,
+          page: pageNum,
+          limit: limitNum,
+          pages: 0,
+          showing: `0 to 0 of 0 records`
+        }
+      });
+    }
 
     // Build match stage
     const matchStage = {
@@ -498,7 +514,11 @@ router.get('/school/:schoolId', protect, authorize('admin', 'trustee'), async (r
           as: 'order'
         }
       },
-      { $unwind: '$order' },
+      { $unwind: {
+          path: '$order',
+          preserveNullAndEmptyArrays: false
+        }
+      },
       { $match: matchStage },
       { $sort: { payment_time: -1 } },
       { $skip: skip },
@@ -584,6 +604,33 @@ router.get('/test/school/:schoolId', async (req, res) => {
       });
     }
 
+    console.log(`Searching for school ID: ${schoolId}`);
+    
+    // First check if any orders exist with this school ID
+    const orderCount = await Order.countDocuments({ school_id: new mongoose.Types.ObjectId(schoolId) });
+    console.log(`Found ${orderCount} orders with school ID: ${schoolId}`);
+    
+    if (orderCount === 0) {
+      // For better debugging, list all available school IDs
+      const allOrders = await Order.find().select('school_id').lean();
+      const uniqueSchoolIds = [...new Set(allOrders.map(o => o.school_id.toString()))];
+      console.log('Available school IDs:', uniqueSchoolIds);
+      
+      return res.status(200).json({
+        data: [],
+        school_id: schoolId,
+        available_school_ids: uniqueSchoolIds,
+        message: 'No orders found with this school ID',
+        pagination: {
+          total: 0,
+          page: pageNum,
+          limit: limitNum,
+          pages: 0,
+          showing: `0 to 0 of 0 records`
+        }
+      });
+    }
+
     // Build match stage
     const matchStage = {
       'order.school_id': new mongoose.Types.ObjectId(schoolId)
@@ -607,7 +654,11 @@ router.get('/test/school/:schoolId', async (req, res) => {
           as: 'order'
         }
       },
-      { $unwind: '$order' },
+      { $unwind: {
+          path: '$order',
+          preserveNullAndEmptyArrays: false
+        }
+      },
       { $match: matchStage },
       { $sort: { payment_time: -1 } },
       { $skip: skip },
@@ -638,6 +689,8 @@ router.get('/test/school/:schoolId', async (req, res) => {
       ])
     ]);
 
+    console.log(`Query returned ${data.length} transactions`);
+    
     const total = countResult[0]?.totalCount || 0;
     
     // Calculate human-readable record range
