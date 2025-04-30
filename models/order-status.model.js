@@ -42,4 +42,9 @@ const OrderStatusSchema = new Schema({
   }
 });
 
+// Add indexes to improve query performance
+OrderStatusSchema.index({ collect_id: 1 });
+OrderStatusSchema.index({ status: 1 });
+OrderStatusSchema.index({ payment_time: -1 }); // For sorting by most recent
+
 module.exports = mongoose.model('OrderStatus', OrderStatusSchema); 

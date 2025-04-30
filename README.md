@@ -734,3 +734,169 @@ For local webhook testing:
    ```
 
 3. Check logs to confirm webhook delivery and processing
+
+# School Payment & Dashboard System - Backend
+
+## Transaction API Documentation
+
+The Transaction API provides endpoints to fetch and manage payment transactions in the system.
+
+### Setup and Configuration
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Configure environment variables:
+   Create a `.env` file with the following variables:
+
+```
+MONGO_URI=mongodb://localhost:27017/school-payment-system
+PORT=5000
+JWT_SECRET=your_jwt_secret
+```
+
+3. Seed test data:
+
+```bash
+node scripts/seedTransactions.js
+```
+
+### Available Endpoints
+
+#### 1. Fetch Transactions with Pagination and Filtering
+
+- **Endpoint:** `GET /api/transactions`
+- **Access:** Private (Admin, Trustee)
+- **Query Parameters:**
+  - `page`: Page number (default: 1)
+  - `limit`: Number of items per page (default: 10)
+  - `status`: Filter by status (success, pending, failed)
+
+**Example Requests:**
+
+```
+GET /api/transactions
+GET /api/transactions?page=2&limit=15
+GET /api/transactions?status=success
+GET /api/transactions?page=1&limit=10&status=failed
+```
+
+**Response Format:**
+
+```json
+{
+  "data": [
+    {
+      "collect_id": "60d21b4667d0d8992e610c85",
+      "school_id": "60d21b4667d0d8992e610c80",
+      "gateway": "PhonePe",
+      "order_amount": 15000,
+      "transaction_amount": 15000,
+      "status": "success",
+      "custom_order_id": "ORD-1624356932-1",
+      "payment_mode": "UPI",
+      "payment_time": "2023-06-22T10:30:45.000Z",
+      "bank_reference": "UPITX123456789"
+    }
+    // More transaction objects...
+  ],
+  "pagination": {
+    "total": 50,
+    "page": 1,
+    "limit": 10,
+    "pages": 5
+  }
+}
+```
+
+#### 2. Get Transaction Summary Statistics
+
+- **Endpoint:** `GET /api/transactions/summary`
+- **Access:** Private (Admin, Trustee)
+
+**Response Format:**
+
+```json
+{
+  "summary": [
+    {
+      "status": "success",
+      "count": 35,
+      "totalAmount": 525000,
+      "percentage": "70.00"
+    },
+    {
+      "status": "pending",
+      "count": 10,
+      "totalAmount": 150000,
+      "percentage": "20.00"
+    },
+    {
+      "status": "failed",
+      "count": 5,
+      "totalAmount": 75000,
+      "percentage": "10.00"
+    }
+  ],
+  "totals": {
+    "totalTransactions": 50,
+    "totalAmount": 750000,
+    "successRate": "70.00"
+  }
+}
+```
+
+#### 3. Get Transaction by ID
+
+- **Endpoint:** `GET /api/transactions/:id`
+- **Access:** Private (Admin, Trustee)
+
+**Response Format:**
+
+```json
+{
+  "id": "60d21b4667d0d8992e610c86",
+  "collect_id": "60d21b4667d0d8992e610c85",
+  "school_id": "60d21b4667d0d8992e610c80",
+  "gateway": "PhonePe",
+  "student_info": {
+    "names": "Student Name",
+    "id": "ST10001",
+    "email": "student@example.com"
+  },
+  "order_amount": 15000,
+  "transaction_amount": 15000,
+  "status": "success",
+  "custom_order_id": "ORD-1624356932-1",
+  "payment_mode": "UPI",
+  "payment_time": "2023-06-22T10:30:45.000Z",
+  "payment_details": "UPI transaction",
+  "bank_reference": "UPITX123456789",
+  "payment_message": "Payment successful",
+  "error_message": null,
+  "payment_link": "https://pay.example.com/ORD-1624356932-1"
+}
+```
+
+### Data Models Relationship
+
+The Transaction API combines data from two MongoDB collections:
+
+1. **Orders** - Contains order information
+2. **OrderStatus** - Contains payment status information linked to orders
+
+Relationship:
+
+- `OrderStatus.collect_id` references `Order._id`
+- `Order.custom_order_id` is the unique order identifier
+
+### Efficiency Considerations
+
+1. **Indexing**: The MongoDB collections have indexes on frequently queried fields for faster lookups
+2. **Pagination**: The API uses skip/limit for efficient pagination of large result sets
+3. **Sorting**: Results are sorted by payment_time (descending) for most recent transactions first
+4. **Projection**: Only required fields are returned to minimize payload size
+5. **Aggregation Pipeline**: Uses MongoDB's efficient aggregation pipeline for joining collections

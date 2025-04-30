@@ -49,4 +49,10 @@ const OrderSchema = new Schema({
   }
 });
 
+// Add indexes to improve query performance
+OrderSchema.index({ school_id: 1 });
+OrderSchema.index({ trustee_id: 1 });
+OrderSchema.index({ custom_order_id: 1 }, { unique: true });
+OrderSchema.index({ created_at: -1 });
+
 module.exports = mongoose.model('Order', OrderSchema); 
