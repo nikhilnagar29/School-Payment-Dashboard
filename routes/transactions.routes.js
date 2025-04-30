@@ -442,4 +442,227 @@ router.get('/:id', protect, authorize('admin', 'trustee'), async (req, res) => {
   }
 });
 
+/**
+ * @desc    Fetch Transactions by School ID
+ * @route   GET /api/transactions/school/:schoolId
+ * @access  Private/Admin/Trustee
+ */
+router.get('/school/:schoolId', protect, authorize('admin', 'trustee'), async (req, res) => {
+  try {
+    const { schoolId } = req.params;
+    const { status, page = '1', limit = '10' } = req.query;
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    
+    // Validate page and limit
+    if (pageNum < 1 || limitNum < 1) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Page & limit must be positive integers' 
+      });
+    }
+
+    // Validate schoolId
+    if (!mongoose.Types.ObjectId.isValid(schoolId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid school ID format'
+      });
+    }
+
+    // Build match stage
+    const matchStage = {
+      'order.school_id': new mongoose.Types.ObjectId(schoolId)
+    };
+    
+    // Add status filter if provided
+    if (status && status.toLowerCase() !== 'all' && ['success', 'pending', 'failed'].includes(status.toLowerCase())) {
+      matchStage.status = status.toLowerCase();
+    }
+    
+    // If user is trustee, only show their transactions
+    if (req.user.role === 'trustee') {
+      matchStage['order.trustee_id'] = new mongoose.Types.ObjectId(req.user.id);
+    }
+
+    // Calculate skip value
+    const skip = (pageNum - 1) * limitNum;
+    
+    // Create aggregation pipeline
+    const pipeline = [
+      { 
+        $lookup: {
+          from: 'orders',
+          localField: 'collect_id',
+          foreignField: '_id',
+          as: 'order'
+        }
+      },
+      { $unwind: '$order' },
+      { $match: matchStage },
+      { $sort: { payment_time: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+      { 
+        $project: {
+          collect_id: 1,
+          school_id: '$order.school_id',
+          gateway: '$order.gateway_name',
+          order_amount: 1,
+          transaction_amount: 1,
+          status: 1,
+          custom_order_id: '$order.custom_order_id',
+          payment_mode: 1,
+          payment_time: 1,
+          bank_reference: { $ifNull: ['$bank_reference', 'N/A'] },
+          student_info: '$order.student_info'
+        }
+      }
+    ];
+
+    // Execute queries in parallel
+    const [data, countResult] = await Promise.all([
+      OrderStatus.aggregate(pipeline),
+      OrderStatus.aggregate([
+        ...pipeline.slice(0, 3), // lookup, unwind, match
+        { $count: 'totalCount' }
+      ])
+    ]);
+
+    const total = countResult[0]?.totalCount || 0;
+    
+    // Calculate human-readable record range
+    const startRecord = total > 0 ? skip + 1 : 0;
+    const endRecord = Math.min(skip + limitNum, total);
+
+    return res.json({
+      data,
+      school_id: schoolId,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        pages: Math.ceil(total / limitNum),
+        showing: `${startRecord} to ${endRecord} of ${total} records`
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching school transactions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @desc    Fetch Transactions by School ID (Test Route)
+ * @route   GET /api/transactions/test/school/:schoolId
+ * @access  Public (Development Only)
+ */
+router.get('/test/school/:schoolId', async (req, res) => {
+  try {
+    const { schoolId } = req.params;
+    const { status, page = '1', limit = '10' } = req.query;
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    
+    // Validate page and limit
+    if (pageNum < 1 || limitNum < 1) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Page & limit must be positive integers' 
+      });
+    }
+
+    // Validate schoolId
+    if (!mongoose.Types.ObjectId.isValid(schoolId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid school ID format'
+      });
+    }
+
+    // Build match stage
+    const matchStage = {
+      'order.school_id': new mongoose.Types.ObjectId(schoolId)
+    };
+    
+    // Add status filter if provided
+    if (status && status.toLowerCase() !== 'all' && ['success', 'pending', 'failed'].includes(status.toLowerCase())) {
+      matchStage.status = status.toLowerCase();
+    }
+
+    // Calculate skip value
+    const skip = (pageNum - 1) * limitNum;
+    
+    // Create aggregation pipeline
+    const pipeline = [
+      { 
+        $lookup: {
+          from: 'orders',
+          localField: 'collect_id',
+          foreignField: '_id',
+          as: 'order'
+        }
+      },
+      { $unwind: '$order' },
+      { $match: matchStage },
+      { $sort: { payment_time: -1 } },
+      { $skip: skip },
+      { $limit: limitNum },
+      { 
+        $project: {
+          collect_id: 1,
+          school_id: '$order.school_id',
+          gateway: '$order.gateway_name',
+          order_amount: 1,
+          transaction_amount: 1,
+          status: 1,
+          custom_order_id: '$order.custom_order_id',
+          payment_mode: 1,
+          payment_time: 1,
+          bank_reference: { $ifNull: ['$bank_reference', 'N/A'] },
+          student_info: '$order.student_info'
+        }
+      }
+    ];
+
+    // Execute queries in parallel
+    const [data, countResult] = await Promise.all([
+      OrderStatus.aggregate(pipeline),
+      OrderStatus.aggregate([
+        ...pipeline.slice(0, 3), // lookup, unwind, match
+        { $count: 'totalCount' }
+      ])
+    ]);
+
+    const total = countResult[0]?.totalCount || 0;
+    
+    // Calculate human-readable record range
+    const startRecord = total > 0 ? skip + 1 : 0;
+    const endRecord = Math.min(skip + limitNum, total);
+
+    return res.json({
+      data,
+      school_id: schoolId,
+      pagination: {
+        total,
+        page: pageNum,
+        limit: limitNum,
+        pages: Math.ceil(total / limitNum),
+        showing: `${startRecord} to ${endRecord} of ${total} records`
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching school transactions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router; 
