@@ -8,8 +8,8 @@ const generateReceiptNumber = () => {
   const random = Math.floor(10000 + Math.random() * 90000); // 5-digit random number
   return `SCH-${year}-${random}`;
 };
-
-/**
+ 
+/** 
  * Format currency amount
  * @param {number} amount - The amount to format
  * @param {string} currency - Currency code (default: NGN)

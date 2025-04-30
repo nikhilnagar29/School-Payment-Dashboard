@@ -4,6 +4,7 @@ const morgan = require('morgan');
 const dotenv = require('dotenv');
 const path = require('path');
 const { errorHandler } = require('./middlewares/error.middleware');
+const { startPinging, stopPinging } = require('./utils/serverPing');
 
 // Load environment variables
 dotenv.config();
@@ -45,6 +46,15 @@ app.get('/', (req, res) => {
   });
 });
 
+// Special ping endpoint to check server health
+app.get('/ping', (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Server is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Error handling middleware
 app.use(errorHandler);
 
@@ -69,9 +79,23 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   }
 });
 
+// Self-ping functionality to keep the server active
+let pingTimer = null;
+if (process.env.ENABLE_SELF_PING === 'true') {
+  const pingUrl = process.env.PING_URL || `http://localhost:${PORT}/ping`;
+  const pingInterval = parseInt(process.env.PING_INTERVAL || '5', 10) * 60 * 1000; // Default: 5 minutes
+  pingTimer = startPinging(pingUrl, pingInterval);
+}
+
 // Handle graceful shutdown
 process.on('SIGINT', () => {
   console.log('Shutting down gracefully...');
+  
+  // Stop ping timer if active
+  if (pingTimer) {
+    stopPinging(pingTimer);
+  }
+  
   server.close(() => {
     console.log('Server closed.');
     process.exit(0);

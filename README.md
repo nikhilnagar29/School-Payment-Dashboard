@@ -900,3 +900,54 @@ Relationship:
 3. **Sorting**: Results are sorted by payment_time (descending) for most recent transactions first
 4. **Projection**: Only required fields are returned to minimize payload size
 5. **Aggregation Pipeline**: Uses MongoDB's efficient aggregation pipeline for joining collections
+
+## Server Keep-Alive Functionality
+
+The application includes functionality to prevent your server from going to sleep on platforms like Render.com that put free/hobby tier instances to sleep after periods of inactivity.
+
+### Option 1: Self-Ping (Built into the app)
+
+The app can ping itself at regular intervals to keep itself awake. To enable this:
+
+1. Set the following environment variables in your `.env` file:
+
+   ```
+   ENABLE_SELF_PING=true
+   PING_URL="https://your-app-url.onrender.com/ping"
+   PING_INTERVAL=5  # minutes
+   ```
+
+2. The app will automatically ping itself at the specified interval.
+
+### Option 2: Standalone Keep-Alive Script
+
+You can also run a separate script to ping your server:
+
+```bash
+node keepAlive.js [url] [interval_in_minutes]
+```
+
+Example:
+
+```bash
+node keepAlive.js https://your-app-url.onrender.com 15
+```
+
+This is useful if you want to run the keep-alive service on a different machine or with a process manager like PM2.
+
+### Option 3: AWS Lambda Function
+
+For a more reliable solution, you can deploy the provided Lambda function to AWS:
+
+1. Create a new Lambda function in AWS
+2. Upload the code from `lambda/pingFunction.js`
+3. Set up a CloudWatch Events rule to trigger the Lambda every 5-15 minutes
+4. Update the `SERVER_URL` in the function to point to your application
+
+This is the most reliable option as AWS Lambda has a generous free tier and high reliability.
+
+### Which Option Should I Choose?
+
+- **Option 1 (Self-Ping)**: Simplest to set up, but if your app goes to sleep, it can't wake itself up.
+- **Option 2 (Standalone Script)**: Good if you have another server that's always running.
+- **Option 3 (AWS Lambda)**: Most reliable option, recommended for production.
