@@ -13,76 +13,139 @@ const { protect, authorize } = require('../middlewares/auth.middleware');
  */
 router.get('/', protect, authorize('admin','trustee'), async (req, res) => {
   try {
-    const { status, page = '1', limit = '10' } = req.query;
-    const pageNum  = parseInt(page, 10);
+    const { status, page = 1, limit = 10 } = req.query;
+    
+    // Convert page and limit to integers
+    const pageNum = parseInt(page, 10);
     const limitNum = parseInt(limit, 10);
-    if (pageNum<1||limitNum<1) return res.status(400).json({ success:false, error:'Page & limit must be ≥1' });
-
-    // build match
-    const matchStage = {};
-    if (status && status.toLowerCase() !== 'all' && ['success','pending','failed'].includes(status.toLowerCase())) {
-      matchStage.status = status.toLowerCase();
+    
+    // Validate page and limit
+    if (pageNum < 1 || limitNum < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Page and limit must be positive integers'
+      });
     }
-    if (req.user.role==='trustee') {
-      matchStage['order.trustee_id'] = mongoose.Types.ObjectId(req.user.id);
-    }
-
+    
     // Calculate skip value (zero-indexed)
     // For page 1, skip 0 items; for page 2, skip 'limit' items, etc.
     const skip = (pageNum-1)*limitNum;
     
-    const pipeline = [
-      { $lookup: {
+    // Create match stage for status filtering - handle 'all' status
+    const matchStage = {};
+    if (status && status.toLowerCase() !== 'all' && ['success', 'pending', 'failed'].includes(status.toLowerCase())) {
+      matchStage.status = status.toLowerCase();
+    }
+
+    // Use aggregation pipeline to join collections and format data
+    const transactions = await OrderStatus.aggregate([
+      // Join with orders collection
+      {
+        $lookup: {
+          from: 'orders', // The collection to join with
+          localField: 'collect_id',
+          foreignField: '_id',
+          as: 'order'
+        }
+      },
+      // Unwind the order array (since lookup returns an array)
+      {
+        $unwind: '$order'
+      },
+      // Match stage for filtering
+      {
+        $match: matchStage
+      },
+      // Sort by payment time descending (most recent first) - must sort before pagination
+      {
+        $sort: {
+          payment_time: -1
+        }
+      },
+      // Apply pagination
+      {
+        $skip: skip
+      },
+      {
+        $limit: limitNum
+      },
+      // Project only the required fields
+      {
+        $project: {
+          collect_id: '$collect_id',
+          school_id: '$order.school_id',
+          gateway: '$order.gateway_name',
+          order_amount: '$order_amount',
+          transaction_amount: '$transaction_amount',
+          status: '$status',
+          custom_order_id: '$order.custom_order_id',
+          payment_mode: '$payment_mode',
+          payment_time: '$payment_time',
+          bank_reference: { $ifNull: ['$bank_reference', 'N/A'] },
+          student_info: '$order.student_info'
+        }
+      }
+    ]);
+
+    // Count total documents for pagination info
+    const countPipeline = [
+      // Join with orders collection
+      {
+        $lookup: {
           from: 'orders',
           localField: 'collect_id',
           foreignField: '_id',
           as: 'order'
-      }},
-      { $unwind: '$order' },
-      { $match: matchStage },
-      { $sort: { payment_time: -1 } },
-      { $skip: skip },
-      { $limit: limitNum },
-      { $project: {
-          collect_id: 1,
-          school_id: '$order.school_id',
-          gateway: '$order.gateway_name',
-          order_amount: 1,
-          transaction_amount: 1,
-          status: 1,
-          custom_order_id: '$order.custom_order_id',
-          payment_mode: 1,
-          payment_time: 1,
-          bank_reference: { $ifNull: ['$bank_reference', 'N/A'] }
-      }}
+        }
+      },
+      // Unwind the order array
+      {
+        $unwind: '$order'
+      },
+      // Match stage for filtering
+      {
+        $match: matchStage
+      },
+      // Count documents
+      {
+        $count: 'totalCount'
+      }
     ];
 
-    const [data, countResult] = await Promise.all([
-      OrderStatus.aggregate(pipeline),
-      OrderStatus.aggregate([
-        ...pipeline.slice(0,3),    // lookup, unwind, match
-        { $count: 'totalCount' }
-      ])
-    ]);
+    const countResult = await OrderStatus.aggregate(countPipeline);
+    
+    const totalCount = countResult.length > 0 ? countResult[0].totalCount : 0;
+    const totalPages = Math.ceil(totalCount / limitNum);
 
-    const total = countResult[0]?.totalCount||0;
-    
     // Calculate human-readable record range
-    const startRecord = total > 0 ? skip + 1 : 0;
-    const endRecord = Math.min(skip + limitNum, total);
-    
-    return res.json({
-      data,
+    const startRecord = totalCount > 0 ? skip + 1 : 0;
+    const endRecord = Math.min(skip + limitNum, totalCount);
+
+    // If no transactions found, return empty array with pagination info
+    if (!transactions.length) {
+      return res.status(200).json({
+        data: [],
+        pagination: {
+          total: totalCount,
+          page: pageNum,
+          limit: limitNum,
+          pages: totalPages,
+          showing: `0 to 0 of ${totalCount} records`
+        }
+      });
+    }
+
+    res.status(200).json({
+      data: transactions,
       pagination: {
-        total,
+        total: totalCount,
         page: pageNum,
         limit: limitNum,
-        pages: Math.ceil(total/limitNum),
-        // Include human-readable record numbers
-        showing: `${startRecord} to ${endRecord} of ${total} records`
+        pages: totalPages,
+        showing: `${startRecord} to ${endRecord} of ${totalCount} records`
       }
     });
-  } catch (err) {
+  }  catch (err) {
     console.error(err);
     res.status(500).json({ success:false, error:'Server error' });
   }
@@ -164,7 +227,8 @@ router.get('/test', async (req, res) => {
           custom_order_id: '$order.custom_order_id',
           payment_mode: '$payment_mode',
           payment_time: '$payment_time',
-          bank_reference: { $ifNull: ['$bank_reference', 'N/A'] }
+          bank_reference: { $ifNull: ['$bank_reference', 'N/A'] },
+          student_info: '$order.student_info'
         }
       }
     ]);
