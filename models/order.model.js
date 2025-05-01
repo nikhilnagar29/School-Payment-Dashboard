@@ -43,6 +43,10 @@ const OrderSchema = new Schema({
     type: String,
     unique: true
   },
+  amount: {
+    type: Number,
+    required: true
+  },
   created_at: { 
     type: Date, 
     default: Date.now 

@@ -82,6 +82,7 @@ router.post("/create-payment", protect, authorize('admin', 'trustee'), async (re
         gateway_name: "Edviron",
         payment_link: response.data.collect_request_url,
         custom_order_id: response.data.collect_request_id,
+        amount: order_amount
       });
       
       await order.save();
@@ -132,7 +133,7 @@ router.get("/webhook", async (req, res) => {
     console.log('📥 Received GET webhook:', req.query);
     
     // Extract query parameters
-    const { EdvironCollectRequestId, status, amount } = req.query;
+    const { EdvironCollectRequestId, status, reason } = req.query;
     
     // Log webhook request for tracking
     webhookLog = new WebhookLog({
@@ -175,7 +176,7 @@ router.get("/webhook", async (req, res) => {
     console.log(`✅ Found order for EdvironCollectRequestId ${EdvironCollectRequestId}:`, order._id);
     
     // Parse amount or use default from order (if available)
-    const parsedAmount = amount ? Number(amount) : 0;
+    const parsedAmount = order.amount ? Number(order.amount) : 0;
     
     // Check if an order status already exists
     const existingStatus = await OrderStatus.findOne({ collect_id: order._id });
