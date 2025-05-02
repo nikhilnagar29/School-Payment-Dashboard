@@ -308,18 +308,8 @@ router.get('/test', async (req, res) => {
  */
 router.get('/summary', protect, authorize('admin', 'trustee'), async (req, res) => {
   try {
-    let matchQuery = {};
-    
-    // If user is trustee, only include their transactions in summary
-    if (req.user.role === 'trustee') {
-      const trusteeOrders = await Order.find({ trustee_id: req.user.id }).select('_id');
-      const orderIds = trusteeOrders.map(order => order._id);
-      matchQuery.collect_id = { $in: orderIds };
-    }
-    
     // Get aggregate summary by status
     const summary = await OrderStatus.aggregate([
-      { $match: matchQuery },
       {
         $group: {
           _id: '$status',
@@ -526,14 +516,18 @@ router.get('/school/:schoolId', protect, authorize('admin', 'trustee'), async (r
         error: 'Invalid school ID format'
       });
     }
+
+    console.log(`Searching for school ID: ${schoolId}`);
     
     // First check if any orders exist with this school ID
     const orderCount = await Order.countDocuments({ school_id: new mongoose.Types.ObjectId(schoolId) });
+    console.log(`Found ${orderCount} orders with school ID: ${schoolId}`);
     
     if (orderCount === 0) {
       // For better debugging, list all available school IDs
       const allOrders = await Order.find().select('school_id').lean();
       const uniqueSchoolIds = [...new Set(allOrders.map(o => o.school_id.toString()))];
+      console.log('Available school IDs:', uniqueSchoolIds);
       
       return res.status(200).json({
         data: [],
@@ -558,11 +552,6 @@ router.get('/school/:schoolId', protect, authorize('admin', 'trustee'), async (r
     // Add status filter if provided
     if (status && status.toLowerCase() !== 'all' && ['success', 'pending', 'failed'].includes(status.toLowerCase())) {
       matchStage.status = status.toLowerCase();
-    }
-    
-    // If user is trustee, only show their transactions
-    if (req.user.role === 'trustee') {
-      matchStage['order.trustee_id'] = new mongoose.Types.ObjectId(req.user.id);
     }
 
     // Calculate skip value
@@ -613,6 +602,8 @@ router.get('/school/:schoolId', protect, authorize('admin', 'trustee'), async (r
       ])
     ]);
 
+    console.log(`Query returned ${data.length} transactions`);
+    
     const total = countResult[0]?.totalCount || 0;
     
     // Calculate human-readable record range
@@ -777,6 +768,67 @@ router.get('/test/school/:schoolId', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Server error',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @desc    Check Transaction Status by custom_order_id
+ * @route   GET /api/transactions/status/:custom_order_id
+ * @access  Public
+ */
+router.get('/status/:custom_order_id', async (req, res) => {
+  try {
+    const { custom_order_id } = req.params;
+    
+    if (!custom_order_id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Custom order ID is required'
+      });
+    }
+    
+    // First find the order with the given custom_order_id
+    const order = await Order.findOne({ custom_order_id });
+    
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found with the provided custom_order_id'
+      });
+    }
+    
+    // Now find the transaction status for this order
+    const transaction = await OrderStatus.findOne({ collect_id: order._id });
+    
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transaction not found for this order'
+      });
+    }
+    
+    // Return the transaction status
+    return res.status(200).json({
+      success: true,
+      transaction: {
+        custom_order_id: order.custom_order_id,
+        status: transaction.status,
+        payment_time: transaction.payment_time,
+        payment_mode: transaction.payment_mode,
+        transaction_amount: transaction.transaction_amount,
+        payment_message: transaction.payment_message,
+        error_message: transaction.error_message,
+        bank_reference: transaction.bank_reference || 'N/A'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error checking transaction status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check transaction status',
       message: error.message
     });
   }
